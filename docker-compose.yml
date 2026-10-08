@@ -1,0 +1,2 @@
+# No containers are required for Phase 1. Add services as later phases need them.
+services: {}
