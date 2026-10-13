@@ -31,6 +31,7 @@ def _update_failed(db: Session, document: Document, error_description: str) -> N
     }
     try:
         db.commit()
+        invalidate_bm25_index()
     except SQLAlchemyError:
         db.rollback()
         raise DocumentProcessingError("Document processing could not be saved", 503) from None
@@ -54,6 +55,7 @@ def process_document(db: Session, document: Document) -> dict[str, Any]:
     document.metadata_json = metadata
     try:
         db.commit()
+        invalidate_bm25_index()
     except SQLAlchemyError:
         db.rollback()
         raise DocumentProcessingError("Document processing could not be started", 503) from None

@@ -3,7 +3,11 @@ from __future__ import annotations
 import argparse
 import sys
 import uuid
+from collections.abc import Iterable
 from pathlib import Path
+
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -15,11 +19,23 @@ from app.db.session import get_engine
 TARGET_DOCUMENT_ID = "a33ebd66-bb12-4314-ae89-7a0549fb3868"
 
 
+def get_expected_migration_heads() -> set[str]:
+    alembic_ini = Path(__file__).resolve().parents[1] / "alembic.ini"
+    return set(ScriptDirectory.from_config(Config(str(alembic_ini))).get_heads())
+
+
+def migration_heads_are_applied(
+    applied_revisions: Iterable[str], expected_heads: set[str]
+) -> bool:
+    return bool(expected_heads) and expected_heads.issubset(set(applied_revisions))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Verify the database schema and embedded document.")
     parser.add_argument("--document-id", type=uuid.UUID, default=TARGET_DOCUMENT_ID)
     parser.add_argument("--expected-chunks", type=int, default=136)
     arguments = parser.parse_args()
+    expected_heads = get_expected_migration_heads()
 
     engine = get_engine()
     if engine is None:
@@ -52,17 +68,12 @@ def main() -> int:
                         """
                     )
                 ).one_or_none()
-            migration_applied = False
+            applied_revisions: set[str] = set()
             if "alembic_version" in tables:
-                migration_applied = bool(
-                    connection.scalar(
-                        text(
-                            "SELECT EXISTS (SELECT 1 FROM alembic_version "
-                            "WHERE version_num = :revision)"
-                        ),
-                        {"revision": "0001_initial_database"},
-                    )
+                applied_revisions = set(
+                    connection.scalars(text("SELECT version_num FROM alembic_version")).all()
                 )
+            migration_applied = migration_heads_are_applied(applied_revisions, expected_heads)
             embedding_stats = None
             target_document = connection.execute(
                 text(

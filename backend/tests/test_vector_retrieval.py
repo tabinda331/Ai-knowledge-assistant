@@ -76,6 +76,7 @@ class FakeSession:
         self.chunks = chunks
         self.commits = 0
         self.executes = 0
+        self.statements: list[Any] = []
 
     def get(self, model: type[Any], key: uuid.UUID) -> Any | None:
         assert model is Document
@@ -91,6 +92,7 @@ class FakeSession:
 
     def execute(self, statement: Any) -> FakeResult:
         self.executes += 1
+        self.statements.append(statement)
         params = list(statement.compile().params.values())
         requested_document = next(
             (value for value in params if isinstance(value, uuid.UUID)), None
@@ -102,10 +104,19 @@ class FakeSession:
         )
         limit = statement._limit_clause.value
         rows = []
+        ready_document_ids = {
+            document_id
+            for document_id, document in self.documents.items()
+            if document.status == "completed"
+            and (document_chunks := [chunk for chunk in self.chunks if chunk.document_id == document_id])
+            and all(chunk.embedding is not None for chunk in document_chunks)
+        }
         for chunk in self.chunks:
             if chunk.embedding is None:
                 continue
             if requested_document is not None and chunk.document_id != requested_document:
+                continue
+            if requested_document is None and chunk.document_id not in ready_document_ids:
                 continue
             numerator = sum(left * right for left, right in zip(chunk.embedding, query_vector))
             left_norm = math.sqrt(sum(value * value for value in chunk.embedding))
@@ -242,6 +253,51 @@ def test_search_without_matching_embedded_chunks_returns_empty_results(
 
     assert response.status_code == 200
     assert response.json()["results"] == []
+
+
+def test_global_dense_search_includes_only_fully_embedded_completed_documents(
+    search_setup: tuple[TestClient, FakeSession, list[list[str]]],
+) -> None:
+    client, session, _ = search_setup
+    non_ready_document = session.documents[next(iter(session.documents))]
+    ready_document_id = next(
+        document.id for document in session.documents.values() if document.id != non_ready_document.id
+    )
+    non_ready_document.status = "completed"
+    session.chunks = [
+        make_chunk(ready_document_id, 0, vector(1.0)),
+        make_chunk(non_ready_document.id, 0, vector(1.0)),
+        make_chunk(non_ready_document.id, 1, None),
+    ]
+
+    response = client.post("/search", json={"query": "evidence", "retrieval_mode": "dense"})
+
+    assert response.status_code == 200
+    results = response.json()["results"]
+    assert len(results) == 1
+    assert results[0]["document_id"] == str(ready_document_id)
+    sql = str(session.statements[0].compile()).lower()
+    assert "document_chunks.document_id in (select" in sql
+    assert "documents.status" in sql
+
+
+def test_explicit_dense_search_keeps_partial_document_behavior(
+    search_setup: tuple[TestClient, FakeSession, list[list[str]]],
+) -> None:
+    client, session, _ = search_setup
+    requested_document_id = next(iter(session.documents))
+    session.chunks = [
+        make_chunk(requested_document_id, 0, vector(1.0)),
+        make_chunk(requested_document_id, 1, None),
+    ]
+
+    response = client.post(
+        "/search",
+        json={"query": "evidence", "document_id": str(requested_document_id)},
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()["results"]) == 1
 
 
 def test_search_is_read_only_and_query_embedding_is_1024_dimensions(

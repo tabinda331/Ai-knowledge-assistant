@@ -131,9 +131,15 @@ def embedding_client(monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, FakeS
 
 def test_document_chunks_are_embedded_and_persisted(
     embedding_client: tuple[TestClient, FakeSession],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client, session = embedding_client
     document_id = session.documents[0].id
+    invalidations: list[bool] = []
+    monkeypatch.setattr(
+        "app.services.document_embedding.invalidate_bm25_index",
+        lambda: invalidations.append(True),
+    )
 
     response = client.post(f"/documents/{document_id}/embed")
 
@@ -144,6 +150,7 @@ def test_document_chunks_are_embedded_and_persisted(
     assert all(chunk.embedding is not None for chunk in session.chunks)
     assert all(len(chunk.embedding or []) == 1024 for chunk in session.chunks)
     assert session.commits == 1
+    assert invalidations == [True]
 
 
 def test_rerunning_embedding_skips_existing_vectors(

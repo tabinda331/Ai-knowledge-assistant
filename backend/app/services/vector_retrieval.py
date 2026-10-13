@@ -10,6 +10,7 @@ from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
 from app.schemas.search import SearchResult
 from app.services.embedding import EMBEDDING_DIMENSION, EmbeddingGenerationError, embed_texts
+from app.services.retrieval_scope import ready_document_ids_statement
 
 
 class VectorRetrievalError(Exception):
@@ -64,6 +65,10 @@ def retrieve_chunks(
         )
         if document_id is not None:
             statement = statement.where(DocumentChunk.document_id == document_id)
+        else:
+            statement = statement.where(
+                DocumentChunk.document_id.in_(ready_document_ids_statement())
+            )
 
         rows = db.execute(statement).mappings().all()
     except VectorRetrievalError:

@@ -121,6 +121,38 @@ def test_hybrid_mode_runs_dense_and_bm25_with_same_document_filter(
     assert session.commits == 0
 
 
+def test_global_hybrid_retrieval_passes_global_ready_scope_to_both_methods(
+    hybrid_client: tuple[TestClient, FakeReadOnlySession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _session = hybrid_client
+    calls: list[tuple[str, uuid.UUID | None]] = []
+    eligible = result(0, similarity=0.9, bm25_score=2.0, bm25_rank=1)
+
+    def dense(db: Any, query: str, top_k: int, document_id: uuid.UUID | None) -> list[SearchResult]:
+        assert db is _session and query == "ready evidence" and top_k == 5
+        calls.append(("dense", document_id))
+        return [eligible.model_copy(update={"bm25_score": None, "bm25_rank": None})]
+
+    def bm25(db: Any, query: str, top_k: int, document_id: uuid.UUID | None) -> list[SearchResult]:
+        assert db is _session and query == "ready evidence" and top_k == 5
+        calls.append(("bm25", document_id))
+        return [eligible.model_copy(update={"similarity": None})]
+
+    monkeypatch.setattr("app.services.search_pipeline.retrieve_chunks", dense)
+    monkeypatch.setattr("app.services.search_pipeline.retrieve_bm25_chunks", bm25)
+
+    response = client.post(
+        "/search",
+        json={"query": "ready evidence", "retrieval_mode": "hybrid", "rerank": False},
+    )
+
+    assert response.status_code == 200
+    assert calls == [("dense", None), ("bm25", None)]
+    assert len(response.json()["results"]) == 1
+    assert response.json()["results"][0]["hybrid_score"] is not None
+
+
 def test_bm25_mode_calls_only_keyword_retrieval(
     hybrid_client: tuple[TestClient, FakeReadOnlySession],
     monkeypatch: pytest.MonkeyPatch,

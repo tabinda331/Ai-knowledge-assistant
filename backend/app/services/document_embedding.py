@@ -14,6 +14,7 @@ from app.services.embedding import (
     EmbeddingGenerationError,
     embed_texts,
 )
+from app.services.bm25_retrieval import invalidate_bm25_index
 
 
 class DocumentEmbeddingError(Exception):
@@ -43,6 +44,7 @@ def embed_document(db: Session, document_id: uuid.UUID) -> dict[str, Any]:
             for chunk, vector in zip(pending_chunks, vectors, strict=True):
                 chunk.embedding = vector
             db.commit()
+            invalidate_bm25_index()
     except DocumentEmbeddingError:
         raise
     except EmbeddingGenerationError:

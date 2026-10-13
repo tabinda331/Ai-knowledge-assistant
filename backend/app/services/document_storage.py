@@ -35,6 +35,12 @@ class StoredPDF:
     sha256: str
 
 
+@dataclass(frozen=True)
+class StagedPDFRemoval:
+    original_path: Path
+    staged_path: Path
+
+
 def sanitize_filename(filename: str | None) -> str:
     if not filename:
         raise InvalidPDFError("A PDF filename is required")
@@ -101,6 +107,47 @@ def remove_stored_pdf(storage_key: str) -> None:
     stored_path = resolve_stored_pdf_path(storage_key)
     if stored_path is not None:
         stored_path.unlink(missing_ok=True)
+
+
+def stage_stored_pdf_removal(storage_key: str | None) -> StagedPDFRemoval | None:
+    if not storage_key:
+        return None
+    if not isinstance(storage_key, str):
+        raise DocumentStorageError("Unable to remove stored document")
+    try:
+        stored_path = resolve_stored_pdf_path(storage_key)
+    except (OSError, RuntimeError):
+        raise DocumentStorageError("Unable to remove stored document") from None
+    if stored_path is None:
+        raise DocumentStorageError("Unable to remove stored document")
+    if not stored_path.exists():
+        return None
+    if not stored_path.is_file():
+        raise DocumentStorageError("Unable to remove stored document")
+    staged_path = stored_path.with_name(f".delete-{uuid.uuid4().hex}.tmp")
+    try:
+        os.replace(stored_path, staged_path)
+    except OSError:
+        raise DocumentStorageError("Unable to remove stored document") from None
+    return StagedPDFRemoval(stored_path, staged_path)
+
+
+def restore_staged_pdf(removal: StagedPDFRemoval | None) -> None:
+    if removal is None or not removal.staged_path.exists():
+        return
+    try:
+        os.replace(removal.staged_path, removal.original_path)
+    except OSError:
+        raise DocumentStorageError("Unable to restore stored document") from None
+
+
+def finalize_staged_pdf_removal(removal: StagedPDFRemoval | None) -> None:
+    if removal is None:
+        return
+    try:
+        removal.staged_path.unlink(missing_ok=True)
+    except OSError:
+        raise DocumentStorageError("Unable to remove stored document") from None
 
 
 def resolve_stored_pdf_path(storage_key: str) -> Path | None:

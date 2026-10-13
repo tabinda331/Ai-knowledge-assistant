@@ -14,7 +14,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=LOCAL_FRONTEND_ORIGINS,
     allow_credentials=False,
-    allow_methods=["POST", "OPTIONS"],
+    allow_methods=["POST", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
 app.include_router(documents_router)

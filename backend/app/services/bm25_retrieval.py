@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
 from app.schemas.search import SearchResult
+from app.services.retrieval_scope import ready_document_ids_statement
 
 BM25_CACHE_TTL_SECONDS = 60
 BM25_CACHE_MAX_SCOPES = 32
@@ -63,6 +64,10 @@ def _load_chunks(db: Session, document_id: uuid.UUID | None) -> list[BM25Chunk]:
     ).order_by(DocumentChunk.document_id, DocumentChunk.chunk_index)
     if document_id is not None:
         statement = statement.where(DocumentChunk.document_id == document_id)
+    else:
+        statement = statement.where(
+            DocumentChunk.document_id.in_(ready_document_ids_statement())
+        )
 
     rows = db.execute(statement).mappings().all()
     return [

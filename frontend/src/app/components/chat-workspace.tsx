@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
 import ChatMessageView, { type ChatMessage } from "@/app/components/chat-message";
-import { askQuestion } from "@/lib/api";
+import AppHeader from "@/app/components/app-header";
+import { askQuestion, type ChatRetrievalScope } from "@/lib/api";
 
 const suggestedQuestions = [
   "What is the warranty for the NovaBook Pro 14?",
@@ -18,6 +19,8 @@ export default function ChatWorkspace() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [scope, setScope] = useState<ChatRetrievalScope>("novacart");
+  const [scopeNotice, setScopeNotice] = useState<string | null>(null);
   const [pendingTurn, setPendingTurn] = useState<ChatMessage | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingStage, setLoadingStage] = useState<LoadingStage>("searching");
@@ -38,13 +41,17 @@ export default function ChatWorkspace() {
 
   async function sendTurn(turn: ChatMessage) {
     if (loading) return;
+    if (scope === "novacart" && !process.env.NEXT_PUBLIC_NOVACART_DOCUMENT_ID?.trim()) {
+      setError(true);
+      return;
+    }
     setPendingTurn(turn);
     setError(false);
     setLoadingStage("searching");
     setLoading(true);
 
     try {
-      const response = await askQuestion(turn.content, conversationId ?? undefined);
+      const response = await askQuestion(turn.content, conversationId ?? undefined, scope);
       setConversationId(response.conversation_id);
       setMessages((current) => [
         ...current,
@@ -94,42 +101,64 @@ export default function ChatWorkspace() {
     setConversationId(null);
     setPendingTurn(null);
     setError(false);
+    setScopeNotice(null);
+  }
+
+  function changeScope(nextScope: ChatRetrievalScope) {
+    if (loading || nextScope === scope) return;
+    setScope(nextScope);
+    setMessages([]);
+    setInput("");
+    setConversationId(null);
+    setPendingTurn(null);
+    setError(false);
+    setScopeNotice("Retrieval scope changed. A new conversation has started.");
   }
 
   const visibleMessages = pendingTurn ? [...messages, pendingTurn] : messages;
-  const inputDisabled = loading || Boolean(error && pendingTurn);
+  const missingNovaCartDocumentId = !process.env.NEXT_PUBLIC_NOVACART_DOCUMENT_ID?.trim();
+  const inputDisabled = loading || Boolean(error && pendingTurn) || (scope === "novacart" && missingNovaCartDocumentId);
 
   return (
     <div className="chat-app">
-      <header className="topbar">
-        <div className="brand" aria-label="NovaCart AI Customer Assistant">
-          <span className="brand-mark" aria-hidden="true">N</span>
-          <span className="brand-copy">
-            <strong>NovaCart</strong>
-            <span>AI Customer Assistant</span>
-          </span>
-        </div>
-
-        <div className="header-actions">
-          <span className="knowledge-badge">
-            <span className="knowledge-dot" aria-hidden="true" />
-            NovaCart knowledge base
-          </span>
-          <button
-            className="new-chat-button"
-            type="button"
-            onClick={startNewChat}
-            disabled={loading}
-          >
-            <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
-              <path d="M10 4v12M4 10h12" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-            </svg>
-            New Chat
-          </button>
-        </div>
-      </header>
+      <AppHeader
+        active="assistant"
+        actions={
+          <>
+            <label className="scope-selector">
+              <span>Search scope</span>
+              <select
+                aria-label="Chat retrieval scope"
+                value={scope}
+                onChange={(event) => changeScope(event.target.value as ChatRetrievalScope)}
+                disabled={loading}
+              >
+                <option value="novacart">NovaCart document</option>
+                <option value="all">All documents</option>
+              </select>
+            </label>
+            <button
+              className="new-chat-button"
+              type="button"
+              onClick={startNewChat}
+              disabled={loading}
+            >
+              <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
+                <path d="M10 4v12M4 10h12" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+              </svg>
+              New Chat
+            </button>
+          </>
+        }
+      />
 
       <main className="chat-main">
+        {scopeNotice ? <p className="scope-notice" role="status">{scopeNotice}</p> : null}
+        {scope === "novacart" && missingNovaCartDocumentId ? (
+          <p className="scope-config-error" role="alert">
+            NovaCart document search is not configured. Set NEXT_PUBLIC_NOVACART_DOCUMENT_ID, or choose All documents.
+          </p>
+        ) : null}
         <section className="conversation-panel" aria-label="NovaCart conversation">
           {!hasMessages ? (
             <div className="welcome-state">
@@ -137,7 +166,7 @@ export default function ChatWorkspace() {
               <p className="welcome-eyebrow">NOVACART SUPPORT</p>
               <h1>How can I help you today?</h1>
               <p className="welcome-description">
-                Ask a question and I’ll find an answer in NovaCart’s knowledge base.
+                Ask a question and I’ll search {scope === "all" ? "all available documents" : "the NovaCart document"}.
               </p>
               <div className="suggestion-grid" aria-label="Suggested questions">
                 {suggestedQuestions.map((question) => (
@@ -168,7 +197,7 @@ export default function ChatWorkspace() {
                     <span className="loading-spinner" aria-hidden="true" />
                     <span>
                       {loadingStage === "searching"
-                        ? "Searching NovaCart’s knowledge base…"
+                        ? scope === "all" ? "Searching all documents…" : "Searching the NovaCart document…"
                         : "Preparing your answer…"}
                     </span>
                   </div>
@@ -194,13 +223,13 @@ export default function ChatWorkspace() {
         </section>
 
         <form className="composer" onSubmit={submitMessage}>
-          <label className="sr-only" htmlFor="chat-input">Ask NovaCart a question</label>
+          <label className="sr-only" htmlFor="chat-input">Ask a question</label>
           <textarea
             id="chat-input"
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={handleInputKeyDown}
-            placeholder="Ask NovaCart anything..."
+            placeholder={scope === "all" ? "Ask across all documents..." : "Ask NovaCart anything..."}
             rows={2}
             maxLength={4000}
             disabled={inputDisabled}
@@ -219,7 +248,7 @@ export default function ChatWorkspace() {
             </button>
           </div>
         </form>
-        <p className="privacy-note">Answers are based on NovaCart’s available knowledge base.</p>
+        <p className="privacy-note">Answers are based on {scope === "all" ? "all available documents" : "the NovaCart document"}.</p>
       </main>
     </div>
   );
