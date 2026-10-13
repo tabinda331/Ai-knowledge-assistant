@@ -1,44 +1,130 @@
 # AI Knowledge Assistant
 
-A local-first document assistant with a FastAPI backend, PostgreSQL/pgvector storage, and a Next.js interface.
+Ask questions across PDF knowledge bases and get evidence-grounded answers with source citations.
 
-## Current capabilities
+![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)
 
-- Upload, list, inspect, process, embed, and delete PDF documents.
-- Extract text and create ordered, page-aware chunks.
-- Generate normalized 1,024-dimensional embeddings with a local Sentence Transformers model.
-- Search with dense vector, BM25, or hybrid retrieval; hybrid search combines rankings with reciprocal rank fusion.
-- Optionally rerank candidates with a cross-encoder.
-- Generate evidence-grounded answers with citations through an OpenAI-compatible chat API.
-- Persist conversation turns and bounded history in PostgreSQL.
-- Use the Knowledge Base and chat interfaces in the frontend.
+[Repository](https://github.com/tabinda331/Ai-knowledge-assistant) · [Quick start](#quick-start)
 
-PDF files are stored locally; PostgreSQL stores document metadata, chunks, embeddings, and conversations. OCR is not implemented. Local file storage is intended for development and a single backend instance.
+## Overview
 
-## Stack
+Searching long manuals, policies, and support documents by hand is slow. It is also hard to trust an answer when you cannot trace it back to evidence.
 
-- Backend: Python, FastAPI, SQLAlchemy, Alembic, psycopg
-- Database: PostgreSQL 17 with pgvector
-- Frontend: Next.js, React, TypeScript
-- Local document models: Sentence Transformers
+The AI Knowledge Assistant turns text-based PDFs into searchable, page-aware chunks. It combines semantic and keyword retrieval, then sends the selected passages to a configurable chat model to produce a grounded response with source references.
 
-## Windows local setup
+**NovaCart is the fictional sample business used in the demo.** Its support examples illustrate how document-grounded answers should work; they are not real-world business policies.
 
-Prerequisites: Git, Python 3.10 or newer, Node.js 20 or newer, npm, and Docker Desktop for the local PostgreSQL option.
+## Demo highlights
+
+The fictional NovaCart knowledge base demonstrates:
+
+| Example question | Verified demo outcome |
+| --- | --- |
+| What is the NovaBook Pro 14's standard warranty? | Two years, with a citation to the supporting passage. |
+| How long does standard shipping take? | 3–5 business days, with a citation to the supporting passage. |
+| Does NovaCart offer gaming chairs? | The assistant does not confirm an unlisted product and reports that the available documents do not provide enough evidence. |
+
+Answers include source markers. The interface shows the source number, page reference, and chunk index so a reviewer can trace an answer to retrieved content. These examples describe only the fictional demo corpus.
+
+## Features
+
+- **PDF knowledge-base management:** Upload PDFs up to 25 MiB, extract text, create page-aware chunks (1,000 characters with 150 characters of overlap), generate embeddings, view processing and embedding readiness, reprocess documents, and delete document records and their stored files.
+- **Dense semantic search:** Generate normalized 1,024-dimensional vectors with Sentence Transformers and search them using PostgreSQL with pgvector.
+- **Keyword and hybrid retrieval:** Use BM25 keyword search alongside dense search. Hybrid mode combines rankings with Reciprocal Rank Fusion (RRF, constant 60).
+- **Optional reranking:** Use a cross-encoder to reorder retrieved candidates before answer generation.
+- **Grounded answers and citations:** Build answer context from retrieved passages and return structured source references. When retrieval finds no passages, the API returns a fixed insufficient-evidence response without calling the LLM. When passages exist, the model is instructed to answer from that evidence and cite its source markers.
+- **OpenAI-compatible chat provider:** Configure the API key, model, and optional base URL through backend environment settings.
+- **Conversation memory:** Persist user and assistant turns in PostgreSQL. Recent history is bounded by `CONVERSATION_HISTORY_MESSAGES`; earlier assistant responses are context, not evidence.
+- **Search scopes:** Search one selected document or all eligible documents. Global retrieval includes completed documents whose chunks are all embedded. Document-specific BM25 search can also search processed text before embeddings are generated; dense search requires vectors.
+- **Local PDF storage:** Keep uploaded PDF files on the backend filesystem while PostgreSQL stores document metadata, chunks, vectors, and conversations.
+
+PDF processing uses text extraction; scanned PDFs that require OCR are not supported.
+
+## Architecture
+
+~~~mermaid
+flowchart LR
+    User[User] --> UI[Next.js UI]
+    UI -->|Upload or ask| API[FastAPI]
+
+    subgraph Ingestion
+        API -->|Store original PDF| Files[(Local PDF storage)]
+        API -->|Process request| Extract[PDF text extraction and chunking]
+        Extract -->|Text and page metadata| DB[(PostgreSQL and pgvector)]
+        Extract --> Embed[Sentence Transformers embeddings]
+        Embed -->|Normalized 1024-dimensional vectors| DB
+    end
+
+    subgraph Answering
+        API --> Dense[Dense retrieval]
+        DB -->|Vector similarity| Dense
+        API --> BM25[BM25 keyword retrieval]
+        DB -->|Chunk text| BM25
+        Dense --> RRF[Reciprocal Rank Fusion]
+        BM25 --> RRF
+        RRF --> Rerank[Optional cross-encoder reranking]
+        Rerank --> Context[Grounded context with source markers]
+        Context --> LLM[OpenAI-compatible chat model]
+        LLM --> Answer[Answer with citations]
+        Answer --> UI
+        API <-->|Conversation history| DB
+    end
+~~~
+
+## Technology stack
+
+| Area | Technology |
+| --- | --- |
+| Web interface | Next.js 16, React 19, TypeScript 5, Tailwind CSS 4 |
+| API | Python, FastAPI, SQLAlchemy, Alembic, psycopg |
+| Database | PostgreSQL 17, pgvector |
+| Embeddings | Sentence Transformers with `BAAI/bge-m3` (1,024 dimensions) |
+| Reranking | Sentence Transformers CrossEncoder with `BAAI/bge-reranker-v2-m3` |
+| Keyword retrieval | `rank-bm25` |
+| Answer generation | OpenAI Python SDK with an OpenAI-compatible chat-completions provider |
+
+The embedding and reranker models load locally in the backend and may download model files on first use. The chat model is configured separately through the LLM provider settings.
+
+## Screenshots
+
+No application screenshots are currently in the repository. Add genuine captures under `docs/screenshots/` and embed those files here when they are available. No demo URL or placeholder images are used.
+
+## Quick start
+
+### Prerequisites
+
+- Git
+- Python 3.10 or newer
+- Node.js 20.9 or newer and npm
+- Docker Desktop for the local PostgreSQL option
+
+Clone the repository and enter its root directory:
+
+~~~powershell
+git clone https://github.com/tabinda331/Ai-knowledge-assistant.git
+Set-Location Ai-knowledge-assistant
+~~~
 
 ### 1. Start local PostgreSQL with pgvector
 
-If the disposable rag-test-postgres container already exists and is running, skip this command. To create a new local-only container:
+The local setup below binds PostgreSQL to loopback on port `55432`. If a `rag-test-postgres` container already exists and is stopped, start it with `docker start rag-test-postgres`. If it is already running, skip this step.
+
+To create a new local container:
 
 ~~~powershell
 docker run --name rag-test-postgres --env POSTGRES_DB=ragtest --env POSTGRES_USER=ragtest --env POSTGRES_PASSWORD=REPLACE_WITH_A_LOCAL_TEST_PASSWORD --publish 127.0.0.1:55432:5432 --detach pgvector/pgvector:pg17
 ~~~
 
-The port is bound to loopback. Use the password configured for that container; the value above is a placeholder, not a project credential.
+Replace the password placeholder with a password for this local container. Do not put a real database password in the repository or a frontend environment variable.
 
-### 2. Install backend dependencies
+### 2. Install backend dependencies and configure the local database
 
-Run from the repository root:
+From the repository root:
 
 ~~~powershell
 py -3 -m venv .venv
@@ -47,19 +133,13 @@ python -m pip install --upgrade pip
 python -m pip install -r backend\requirements-dev.txt
 ~~~
 
-The development requirements include the runtime packages, pytest, and HTTPX.
-
-### 3. Point migrations and the backend at the local database
-
-The backend loads backend/.env when configuration is imported. A process environment variable takes precedence over the file. To avoid changing an existing .env that may point elsewhere, set the URL only in a dedicated PowerShell window:
-
-If you need a local backend env file for non-database settings, create it only when one does not already exist:
+If you need a backend env file for optional local settings, copy the example only when no `backend/.env` already exists:
 
 ~~~powershell
 if (-not (Test-Path backend/.env)) { Copy-Item backend/.env.example backend/.env }
 ~~~
 
-Do not overwrite an existing backend/.env. The process-scoped URL below selects the disposable database without changing it.
+Do not overwrite an existing `backend/.env`. Set a process-scoped database URL in the PowerShell window used for migrations and the backend. The process environment takes precedence over the value loaded from `backend/.env`, so this selects the local container without changing an existing env file:
 
 ~~~powershell
 $env:DATABASE_URL = 'postgresql+psycopg://ragtest:REPLACE_WITH_A_LOCAL_TEST_PASSWORD@127.0.0.1:55432/ragtest'
@@ -68,37 +148,36 @@ python -m alembic upgrade head
 python -m alembic current
 ~~~
 
-Replace the placeholder with the disposable container's local password. URL-encode reserved characters in the password. The process variable lasts in that PowerShell session and its child processes; closing the window clears it. Do not put database credentials in frontend environment files.
+Use the local container password in the URL and URL-encode reserved characters. The environment variable remains set in that PowerShell window and its child processes. Migrations are explicit; starting FastAPI does not create or migrate tables. The initial migration needs permission to create the pgvector extension.
 
-Migrations are explicit commands. Starting FastAPI does not create tables or run migrations.
+### 3. Start the backend
 
-### 4. Start the backend
-
-In the same PowerShell window, with DATABASE_URL still set and the current directory backend:
+Continue in the same PowerShell window, with the local `DATABASE_URL` still set and the current directory `backend`:
 
 ~~~powershell
 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ~~~
 
-Check http://127.0.0.1:8000/health. The database check at http://127.0.0.1:8000/health/db opens a connection to the configured database.
+Check the API at `http://127.0.0.1:8000/health`. `http://127.0.0.1:8000/health/db` checks connectivity to the configured database.
 
-The backend also reads these optional settings from its process environment or backend/.env:
+The backend reads these settings from its process environment or `backend/.env`:
 
 | Variable | Purpose |
 | --- | --- |
-| DOCUMENT_STORAGE_DIR | PDF storage root; defaults to backend/storage/. |
-| EMBEDDING_MODEL | Sentence Transformers embedding model; defaults to BAAI/bge-m3. |
-| RERANKER_MODEL | Cross-encoder model; defaults to BAAI/bge-reranker-v2-m3. |
-| LLM_API_KEY | Provider key, required only when /ask has evidence to send for generation. |
-| LLM_MODEL | Chat model; defaults to gpt-4o-mini. |
-| LLM_BASE_URL | Optional OpenAI-compatible API base URL. |
-| CONVERSATION_HISTORY_MESSAGES | Maximum messages loaded for a turn; defaults to 10 and is clamped from 0 to 100. |
+| `DATABASE_URL` | PostgreSQL connection URL. Set it to the local URL before migrations and local API use. |
+| `DOCUMENT_STORAGE_DIR` | Local PDF storage root; defaults to `backend/storage/`. |
+| `EMBEDDING_MODEL` | Sentence Transformers model; defaults to `BAAI/bge-m3`. |
+| `RERANKER_MODEL` | Cross-encoder model; defaults to `BAAI/bge-reranker-v2-m3`. |
+| `LLM_API_KEY` | Provider key; required for `/ask` when retrieved evidence needs generation. |
+| `LLM_MODEL` | Chat model; defaults to `gpt-4o-mini`. |
+| `LLM_BASE_URL` | Optional OpenAI-compatible API base URL. |
+| `CONVERSATION_HISTORY_MESSAGES` | Recent messages loaded for a turn; defaults to 10 and is clamped from 0 to 100. |
 
-HOST and PORT in backend/.env.example are example launch settings; the application does not read them automatically. Pass bind address and port to Uvicorn as shown.
+`HOST` and `PORT` in `backend/.env.example` are example launch settings; the application does not read them automatically. The Uvicorn command above sets the bind address and port.
 
-### 5. Start the frontend
+### 4. Start the frontend
 
-In a second PowerShell window:
+Open a second PowerShell window at the repository root:
 
 ~~~powershell
 Set-Location frontend
@@ -107,46 +186,47 @@ if (-not (Test-Path .env.local)) { Copy-Item .env.example .env.local }
 npm run dev
 ~~~
 
-Set only public frontend values in frontend/.env.local:
+The frontend uses these public settings in `frontend/.env.local`:
 
 | Variable | Purpose |
 | --- | --- |
-| NEXT_PUBLIC_API_BASE_URL | Backend URL, normally http://127.0.0.1:8000. |
-| NEXT_PUBLIC_NOVACART_DOCUMENT_ID | Document ID used by the default NovaCart chat scope; set it to a fully embedded document. |
+| `NEXT_PUBLIC_API_BASE_URL` | FastAPI base URL; normally `http://127.0.0.1:8000`. |
+| `NEXT_PUBLIC_NOVACART_DOCUMENT_ID` | Optional ID of a fully embedded document for the NovaCart-specific chat scope. The All documents scope does not require it. |
 
-The chat can also use the all-documents scope. Never place DATABASE_URL, LLM_API_KEY, or other backend secrets in a NEXT_PUBLIC_* variable. Open http://localhost:3000.
+Only put public values in `NEXT_PUBLIC_*` variables. Never put `DATABASE_URL`, `LLM_API_KEY`, or other backend credentials in frontend configuration. Open `http://localhost:3000`, choose a PDF in **Knowledge Base**, upload it, then process and embed it. Use **All documents** to search the ready documents in a fresh local database, or configure the NovaCart document ID for a document-specific scope.
 
-### Upload and test a document
+The main API routes are `GET/POST /documents`, `GET/DELETE /documents/{document_id}`, `POST /documents/{document_id}/process`, `POST /documents/{document_id}/embed`, `POST /search`, and `POST /ask`.
 
-Use the Knowledge Base page to upload a PDF, process it, then embed it. The chat and /search endpoint can retrieve fully embedded documents. Global retrieval excludes documents with missing embeddings; an explicit document filter can search the embedded chunks of a partially embedded document.
+## Verification
 
-The main API routes are GET/POST /documents, GET/DELETE /documents/{id}, POST /documents/{id}/process, POST /documents/{id}/embed, POST /search, and POST /ask.
-
-## Verification commands
-
-Backend tests use fake sessions or in-memory SQLite and do not require a live PostgreSQL database:
+Run backend tests from `backend/`:
 
 ~~~powershell
 Set-Location backend
 python -m pytest tests -q
 ~~~
 
-Frontend checks, from frontend/:
+The backend suite uses fakes and in-memory SQLite; it does not provide automated PostgreSQL integration coverage or require a live database. The current suite has **91 passing tests**.
+
+Run frontend checks from `frontend/`:
 
 ~~~powershell
+Set-Location frontend
 npm run lint
 npx tsc --noEmit
 npm run build
 ~~~
 
-There is no separate TypeScript npm script; npx tsc --noEmit performs the type check. The production build uses next/font/google and therefore needs network access to fetch Geist fonts unless they are already available to Next.js.
+The repository has no separate TypeScript npm script; `npx tsc --noEmit` performs the type check. The first production build may need network access to retrieve the Geist fonts used through `next/font/google`.
 
-python scripts/verify_database.py is a corpus-specific verifier: by default it expects a known document with 136 chunks and populated embeddings. It is not a generic check for a fresh empty database. For a newly migrated database, use python -m alembic current and /health/db.
+`python scripts/verify_database.py`, run from `backend/`, checks the configured database against a seeded corpus document (136 chunks by default). It is not a generic check for a newly migrated empty database. For a fresh local database, use `python -m alembic current` and the `/health/db` endpoint.
 
-## Safety and limitations
+## Limitations and roadmap
 
-- Keep real backend credentials in backend/.env or process environment; .env files are ignored by Git.
-- Use a process-scoped local DATABASE_URL before running migrations or database-backed manual API requests. The browser must only receive the backend API URL.
-- Document deletion removes its database rows and stored PDF.
-- Embedding and reranking models may download on first use. /ask with evidence requires a reachable configured LLM provider.
-- Local PDF storage is not shared across multiple backend instances. OCR, authentication, and production deployment are not included.
+- **Local file storage:** PDFs are stored under `backend/storage/` by default. This storage is not shared between multiple backend instances.
+- **Text PDFs only:** OCR for scanned documents and advanced layout/table extraction are not implemented.
+- **External answer generation:** `/ask` needs a reachable, configured OpenAI-compatible LLM provider when retrieval returns evidence. Model downloads may also require network access on first use.
+- **No production access controls or deployment setup:** Authentication, tenant isolation, and production deployment configuration are not included. Do not expose this local-first application publicly as-is.
+- **Grounding is evidence-guided:** The prompt asks the LLM to rely on retrieved passages and cite them, but generated text is not a formal guarantee against unsupported claims.
+
+Potential next steps include OCR and layout-aware extraction, authentication and tenant isolation, shared object storage, retrieval evaluation, and production deployment hardening.
