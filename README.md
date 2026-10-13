@@ -92,7 +92,29 @@ The embedding and reranker models load locally in the backend and may download m
 
 ## Screenshots
 
-No application screenshots are currently in the repository. Add genuine captures under `docs/screenshots/` and embed those files here when they are available. No demo URL or placeholder images are used.
+### Warranty answer
+
+The NovaBook Pro 14 warranty response with citations and source cards.
+
+![Warranty answer with citations and source cards](docs/screenshots/question.png)
+
+### Knowledge Base
+
+NovaCart is Ready, with all 10 of 10 chunks embedded.
+
+![Knowledge Base showing NovaCart Ready and 10 of 10 embedded chunks](docs/screenshots/knowledge-base.png)
+
+### AI Assistant welcome screen
+
+The NovaCart assistant welcome screen with suggested questions.
+
+![AI Assistant welcome screen](docs/screenshots/welcome.png)
+
+### Unsupported-product handling
+
+The assistant responds to a question about gaming chairs using available evidence.
+
+![Unsupported-product question about gaming chairs](docs/screenshots/unsupported-product.png)
 
 ## Quick start
 
