@@ -2,6 +2,8 @@
 
 Ask questions across PDF knowledge bases and get evidence-grounded answers with source citations.
 
+[![CI](https://github.com/tabinda331/Ai-knowledge-assistant/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tabinda331/Ai-knowledge-assistant/actions/workflows/ci.yml)
+
 ![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
