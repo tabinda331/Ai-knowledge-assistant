@@ -34,6 +34,7 @@ desktop.ini
 
 # Test, type-check, and tool caches
 .pytest_cache/
+/backend/.pytest-tmp-*/
 .mypy_cache/
 .ruff_cache/
 .coverage
